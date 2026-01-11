@@ -11,13 +11,12 @@ import {SIG_VALIDATION_FAILED, SIG_VALIDATION_SUCCESS} from "lib/account-abstrac
 import {IEntryPoint} from "lib/account-abstraction/contracts/interfaces/IEntryPoint.sol";
 
 contract MinimalAccount is IAccount, Ownable {
+    ////////ERRORS
     error MinimalAccount__NotFromEntryPoint();
+    error MinimalAccount__NotFromEntryPointOrOwner();
+    error MinimalAccount__CallFailed(bytes);
 
-    IEntryPoint private immutable i_entryPoint;
-
-    constructor(address entryPoint) Ownable(msg.sender) {
-        i_entryPoint = IEntryPoint(entryPoint);
-    }
+    //////MODIFIERS
 
     modifier requireFromEntryPoint() {
         if (msg.sender != address(i_entryPoint)) {
@@ -26,11 +25,32 @@ contract MinimalAccount is IAccount, Ownable {
         _;
     }
 
+    modifier requireFromEntryPointOrOwner() {
+        if ((msg.sender != address(i_entryPoint)) && (msg.sender != owner())) {
+            revert MinimalAccount__NotFromEntryPointOrOwner();
+        }
+        _;
+    }
+
+    ////////STATE VARIABLES
+    IEntryPoint private immutable i_entryPoint;
+
+    //FUNCTIONS
+    constructor(address entryPoint) Ownable(msg.sender) {
+        i_entryPoint = IEntryPoint(entryPoint);
+    }
+
+    receive() external payable {}
 
     ////////////////////EXTERNAL FUNCTIONS
 
-    function external(address dest, uint256 value, bytes calldata functionData) {
-        
+    //execute will execute one the user op object os validated by the entry point. It will call the erc20 token to process the function call
+    function execute(address dest, uint256 value, bytes calldata functionData) external requireFromEntryPointOrOwner {
+        //functionData contains the encoded information to call the mint function with its parameters (address and value)
+        (bool success, bytes memory result) = dest.call{value: value}(functionData);
+        if (!success) {
+            revert MinimalAccount__CallFailed(result);
+        }
     }
 
     //entry point => this contract
@@ -44,7 +64,6 @@ contract MinimalAccount is IAccount, Ownable {
         //_validateNounce();
         _payPrefund(missingAccountFunds);
     }
-
 
     ///////////////////INTERNAL FUNCTIONS
 
